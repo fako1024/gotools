@@ -8,6 +8,7 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 
 	"github.com/google/shlex"
@@ -31,8 +32,7 @@ func Run(command string) (stdout string, err error) {
 		return "", err
 	}
 	if outFilePath != "" {
-		/* #nosec G304 */
-		outFile, err := os.OpenFile(outFilePath, os.O_CREATE|os.O_WRONLY, 0600)
+		outFile, err := os.OpenFile(filepath.Clean(outFilePath), os.O_CREATE|os.O_WRONLY, 0600)
 		if err != nil {
 			return "", err
 		}
@@ -85,11 +85,10 @@ func splitByRedirect(command string) (string, string, error) {
 func generateCommand(fields []string, outBuf io.Writer) (cmd *exec.Cmd) {
 
 	// Check if any arguments were provided
-	/* #nosec G204 */
 	if len(fields) == 1 {
-		cmd = exec.Command(fields[0])
+		cmd = exec.Command(fields[0]) // #nosec G204
 	} else {
-		cmd = exec.Command(fields[0], fields[1:]...)
+		cmd = exec.Command(fields[0], fields[1:]...) // #nosec G204
 	}
 
 	// Attach STDOUT + STDERR to output buffer
