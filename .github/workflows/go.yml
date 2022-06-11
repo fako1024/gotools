@@ -43,22 +43,4 @@ jobs:
 
     - name: Test
       run: for pkg in `ls -d */`; do cd $pkg ; go test -v ./... ; cd - ; done
-
-  build-windows:
-    name: Build on Windows
-    runs-on: windows-latest
-    steps:
-    - name: Set up Go
-      uses: actions/setup-go@v2
-      with:
-        go-version: ^1.17
-      id: go
-
-    - name: Check out code into the Go module directory
-      uses: actions/checkout@v2
-
-    - name: Build
-      run: for pkg in `ls -d */`; do cd $pkg ; go build -v -x ./... ; cd - ; done
-
-    - name: Test
-      run: for pkg in `ls -d */`; do cd $pkg ; go test -v ./... ; cd - ; done
+      
