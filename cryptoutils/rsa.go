@@ -1,16 +1,22 @@
+// Package cryptoutils provides a set of methods / functions to simplify typical flows
+// concerning cryptographic operations
 package cryptoutils
 
 import (
 	"crypto/rand"
 	"crypto/rsa"
+	"crypto/sha256"
 	"crypto/x509"
 	"encoding/base64"
 	"encoding/pem"
 	"errors"
+	"hash"
 )
 
+// Bits denotes the number of bits used for key creation / generation
 type Bits = int
 
+// Provide various common key sizes
 const (
 	Bits2048 = 2048
 	Bits4096 = 4096
@@ -86,4 +92,20 @@ func (e *RSA) PrivKeyString() string {
 	return base64.StdEncoding.EncodeToString(
 		x509.MarshalPKCS1PrivateKey(e.privKey),
 	)
+}
+
+// Encrypt encrypts a message using RSA-OAEP, using the hash h (falling back to sha256 if nil)
+func (e *RSA) Encrypt(clearMsg []byte, h hash.Hash) ([]byte, error) {
+	if h == nil {
+		h = sha256.New()
+	}
+	return rsa.EncryptOAEP(h, rand.Reader, &e.privKey.PublicKey, clearMsg, nil)
+}
+
+// Decrypt decrypts a message using RSA-OAEP, using the hash h (falling back to sha256 if nil)
+func (e *RSA) Decrypt(cipherMsg []byte, h hash.Hash) ([]byte, error) {
+	if h == nil {
+		h = sha256.New()
+	}
+	return rsa.DecryptOAEP(h, rand.Reader, e.privKey, cipherMsg, nil)
 }

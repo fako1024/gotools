@@ -1,6 +1,7 @@
 package cryptoutils
 
 import (
+	"crypto/sha512"
 	"encoding/asn1"
 	"encoding/base64"
 	"encoding/pem"
@@ -82,4 +83,38 @@ func TestStringConversion(t *testing.T) {
 	assert.Nil(t, err)
 	assert.Equal(t, r1, r2, "initial and re-read instances should be equal on reference-level")
 	assert.Equal(t, *r1, *r2, "initial and re-read instances should be equal on value-level")
+}
+
+func TestEncryption(t *testing.T) {
+
+	r, err := New(1024)
+	assert.Nil(t, err)
+
+	clearText := []byte("This is a test message")
+	cipherText, err := r.Encrypt(clearText, nil)
+	assert.Nil(t, err)
+
+	// Try encryption with hash exceeding maximum encryption size (limited by 1024 bits)
+	_, err = r.Encrypt(clearText, sha512.New())
+	if assert.Error(t, err) {
+		assert.Equal(t, errors.New("crypto/rsa: message too long for RSA public key size"), err)
+	}
+
+	clearText2, err := r.Decrypt(cipherText, nil)
+	assert.Nil(t, err)
+	assert.Equal(t, string(clearText), string(clearText2), "initial cleartext and cleartext after encryption round-trip should be equal")
+}
+
+func TestEncryptionCustomHash(t *testing.T) {
+
+	r, err := New(Bits2048)
+	assert.Nil(t, err)
+
+	clearText := []byte("This is a test message")
+	cipherText, err := r.Encrypt(clearText, sha512.New())
+	assert.Nil(t, err)
+
+	clearText2, err := r.Decrypt(cipherText, sha512.New())
+	assert.Nil(t, err)
+	assert.Equal(t, string(clearText), string(clearText2), "initial cleartext and cleartext after encryption round-trip should be equal")
 }
