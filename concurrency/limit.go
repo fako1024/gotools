@@ -1,7 +1,5 @@
 package concurrency
 
-import "sync"
-
 const (
 	NoLimit = 0 // NoLimit denotes no limit imposed on the concurrency
 )
@@ -9,14 +7,11 @@ const (
 // Limit provides a generic concurrency / work limiter
 type Limit struct {
 	limiter chan struct{}
-	mutex   sync.Mutex
 }
 
 // New instantiates a new limiter with the given maximum concurrency
 func New(n int) (l *Limit) {
-	l = &Limit{
-		mutex: sync.Mutex{},
-	}
+	l = new(Limit)
 	if n > 0 {
 		l.limiter = make(chan struct{}, n)
 	}
