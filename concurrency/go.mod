@@ -1,3 +1,3 @@
 module github.com/fako1024/gotools/concurrency
 
-go 1.17
+go 1.20
