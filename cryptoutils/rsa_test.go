@@ -97,7 +97,7 @@ func TestEncryption(t *testing.T) {
 	// Try encryption with hash exceeding maximum encryption size (limited by 1024 bits)
 	_, err = r.Encrypt(clearText, sha512.New())
 	if assert.Error(t, err) {
-		assert.Equal(t, errors.New("crypto/rsa: message too long for RSA public key size"), err)
+		assert.Equal(t, errors.New("crypto/rsa: message too long for RSA key size"), err)
 	}
 
 	clearText2, err := r.Decrypt(cipherText, nil)
