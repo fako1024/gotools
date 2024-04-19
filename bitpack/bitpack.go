@@ -108,7 +108,7 @@ func Uint64At(b []byte, at int, neededBytes int) uint64 {
 
 // Len returns the number of encoded elements in the compressed bfer / byte slice
 func Len(b []byte) int {
-	if len(b) == 0 {
+	if len(b) == 0 || b[0] == 0x0 {
 		return 0
 	}
 	return (len(b) - 1) / ByteWidth(b)
