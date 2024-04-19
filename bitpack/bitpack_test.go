@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 type testCase struct {
@@ -56,6 +57,11 @@ func TestTable(t *testing.T) {
 		assert.Equal(t, Len(buf), len(c.input))
 	}
 }
+
+func TestCorruptInput(t *testing.T) {
+	require.Zero(t, Len([]byte{0x0}))
+}
+
 func TestAllByteWidths(t *testing.T) {
 	for i := 0; i < 64; i += 8 {
 		t.Run(fmt.Sprintf("%d_bytes", i/8+1), func(t *testing.T) {
