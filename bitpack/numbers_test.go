@@ -35,6 +35,9 @@ func TestEncodeDecodeUint64(t *testing.T) {
 		// Decode the key and verify consistency with input
 		dec := DecodeUint64FromString(enc)
 		require.Equal(t, val, dec)
+
+		// Print the output (if in verbose mode)
+		t.Logf("%d -> `%s`\n", val, enc)
 	}
 }
 
