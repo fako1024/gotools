@@ -4,6 +4,7 @@ import (
 	"io"
 	"io/fs"
 	"sync"
+	"unsafe"
 )
 
 // ReadWriteSeekCloser provides an interface to all the wrapped interfaces
@@ -70,6 +71,110 @@ func (p *MemPoolLimit) Clear() {
 	p.elements = nil
 }
 
+// MemPoolLimitUnique provides a channel-based memory buffer pool (limiting the number
+// of resources, enforcing their uniqueness and allowing for cleanup)
+type MemPoolLimitUnique struct {
+	elements           chan []byte
+	tracker            map[uintptr]bool
+	initialElementSize int
+
+	sync.Mutex
+}
+
+// NewMemPoolLimitUnique instantiates a new memory pool that manages bytes slices
+func NewMemPoolLimitUnique(n int, initialElementSize int) *MemPoolLimitUnique {
+	obj := MemPoolLimitUnique{
+		elements:           make(chan []byte, n),
+		tracker:            make(map[uintptr]bool),
+		initialElementSize: initialElementSize,
+	}
+	for i := 0; i < n; i++ {
+		elem := make([]byte, initialElementSize)
+
+		obj.elements <- elem
+		obj.tracker[slicePtr(elem)] = false // track as non-taken
+	}
+
+	return &obj
+}
+
+// Get retrieves a memory element (already performing the type assertion)
+func (p *MemPoolLimitUnique) Get(size int) (elem []byte) {
+
+	elem = <-p.elements
+
+	p.Lock()
+	if cap(elem) < size {
+		delete(p.tracker, slicePtr(elem))
+		elem = make([]byte, size*2)
+		p.tracker[slicePtr(elem)] = false
+	}
+	p.tracker[slicePtr(elem)] = true // track as taken
+	p.Unlock()
+
+	elem = elem[:size]
+
+	return
+}
+
+// Put returns a memory element to the pool, resetting its size to capacity
+// in the process
+func (p *MemPoolLimitUnique) Put(elem []byte) {
+
+	elem = elem[:cap(elem)]
+
+	p.Lock()
+	taken, exists := p.tracker[slicePtr(elem)]
+	if !exists {
+		panic("cannot return untracked memory element to pool")
+	}
+
+	p.tracker[slicePtr(elem)] = false // track as non-taken
+	p.Unlock()
+
+	// If the tracked element isn't taken this is probably a duplicate Put()
+	// operation and we ignore it to avoid potential deadlocks on the memory
+	// pool channel
+	if !taken {
+		return
+	}
+
+	p.elements <- elem
+}
+
+// Resize resizes an element of the pool, updating its tracking information
+// in the process
+func (p *MemPoolLimitUnique) Resize(elem []byte, size int) []byte {
+
+	p.Lock()
+	ptr := slicePtr(elem)
+	if _, exists := p.tracker[ptr]; !exists {
+		panic("cannot resize untracked memory element")
+	}
+
+	if cap(elem) < size {
+		newElem := make([]byte, size)
+		copy(newElem, elem)
+
+		delete(p.tracker, ptr)
+		p.tracker[slicePtr(newElem)] = true
+		p.Unlock()
+		return newElem
+	}
+
+	elem = elem[:size]
+	p.tracker[ptr] = true
+	p.Unlock()
+
+	return elem
+}
+
+// Clear releases all pool resources and makes them available for garbage collection
+func (p *MemPoolLimitUnique) Clear() {
+	p.elements = nil
+	p.tracker = nil
+}
+
 // MemPoolNoLimit wraps a standard sync.Pool (no limit to resources)
 type MemPoolNoLimit struct {
 	sync.Pool
@@ -104,4 +209,10 @@ func (p *MemPoolNoLimit) Put(elem []byte) {
 
 	// nolint:staticcheck
 	p.Pool.Put(elem)
+}
+
+// Helper function to get the pointer to the first element in a slice, to be
+// used as key for uniqueness tracking
+func slicePtr(elem []byte) uintptr {
+	return uintptr(unsafe.Pointer(&elem[0])) // #nosec G103
 }
