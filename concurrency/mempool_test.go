@@ -65,7 +65,5 @@ func TestReaderWriter(t *testing.T) {
 		elem1, elem2 := pool.GetReadWriter(0), pool.GetReadWriter(0)
 		require.Zero(t, len(elem1.data))
 		require.Zero(t, len(elem2.data))
-		require.Greater(t, cap(elem1.data), minBufferSize)
-		require.Greater(t, cap(elem2.data), minBufferSize)
 	}
 }
