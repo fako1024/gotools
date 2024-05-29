@@ -25,7 +25,7 @@ type MemPool interface {
 	Get(size int) (elem []byte)
 	Put(elem []byte)
 
-	// io.ReadWriter / Put operations
+	// io.ReadWriter Get / Put operations
 	GetReadWriter(size int) *ReadWriter
 	PutReadWriter(elem *ReadWriter)
 }
