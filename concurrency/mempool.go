@@ -20,8 +20,14 @@ type ReadWriteSeekCloser interface {
 
 // MemPool denotes a generic memory buffer pool
 type MemPool interface {
+
+	// Slice element Get / Put operations
 	Get(size int) (elem []byte)
 	Put(elem []byte)
+
+	// io.ReadWriter / Put operations
+	GetReadWriter(size int) *ReadWriter
+	PutReadWriter(elem *ReadWriter)
 }
 
 // MemPoolGCable denotes a generic memory buffer pool that can be "cleaned", i.e.
@@ -64,6 +70,18 @@ func (p *MemPoolLimit) Get(size int) (elem []byte) {
 func (p *MemPoolLimit) Put(elem []byte) {
 	elem = elem[:cap(elem)]
 	p.elements <- elem
+}
+
+// GetReadWriter return a wrapped element providing an io.ReadWriter
+func (p *MemPoolLimit) GetReadWriter(size int) *ReadWriter {
+	return &ReadWriter{
+		data: p.Get(size),
+	}
+}
+
+// PutReadWriter returns a wrapped element providing an io.ReadWriter to the pool
+func (p *MemPoolLimit) PutReadWriter(elem *ReadWriter) {
+	p.Put(elem.data)
 }
 
 // Clear releases all pool resources and makes them available for garbage collection
@@ -209,6 +227,18 @@ func (p *MemPoolNoLimit) Put(elem []byte) {
 
 	// nolint:staticcheck
 	p.Pool.Put(elem)
+}
+
+// GetReadWriter return a wrapped element providing an io.ReadWriter
+func (p *MemPoolNoLimit) GetReadWriter(size int) *ReadWriter {
+	return &ReadWriter{
+		data: p.Get(size),
+	}
+}
+
+// PutReadWriter returns a wrapped element providing an io.ReadWriter to the pool
+func (p *MemPoolNoLimit) PutReadWriter(elem *ReadWriter) {
+	p.Put(elem.data)
 }
 
 // Helper function to get the pointer to the first element in a slice, to be
