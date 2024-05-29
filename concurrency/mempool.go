@@ -229,7 +229,7 @@ func (p *MemPoolNoLimit) Put(elem []byte) {
 	p.Pool.Put(elem)
 }
 
-// GetReadWriter return a wrapped element providing an io.ReadWriter
+// GetReadWriter returns a wrapped element providing an io.ReadWriter
 func (p *MemPoolNoLimit) GetReadWriter(size int) *ReadWriter {
 	return &ReadWriter{
 		data: p.Get(size),
