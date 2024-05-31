@@ -55,6 +55,7 @@ func TestReaderWriter(t *testing.T) {
 			require.Nil(t, err)
 
 			require.Equal(t, testInput, string(output.data))
+                        require.Equal(t, testInput, string(output.Bytes()))
 
 			pool.PutReadWriter(elem)
 			pool.PutReadWriter(output)

@@ -37,6 +37,13 @@ func (rw *ReadWriter) Write(p []byte) (int, error) {
 	return copy(rw.data[m:], p), nil
 }
 
+// Bytes returns a slice holding the unread portion of the ReadWriter, valid for use only
+// until the next buffer modification (that is, only until the next call to a method like
+// Read(), Write() or Reset()
+// The slice aliases the buffer content at least until the next buffer modification,
+// so immediate changes to the slice will affect the result of future reads
+func (rw *ReadWriter) Bytes() []byte { return rw.data[rw.offset:] }
+
 // Reset resets the buffer to be empty,
 // but it retains the underlying storage for use by future writes
 func (rw *ReadWriter) Reset() {
