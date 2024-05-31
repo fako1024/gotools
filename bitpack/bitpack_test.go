@@ -60,6 +60,18 @@ func TestTable(t *testing.T) {
 
 func TestCorruptInput(t *testing.T) {
 	require.Zero(t, Len([]byte{0x0}))
+	require.Zero(t, Len([]byte{}))
+	require.Zero(t, Len(nil))
+
+	buf, res := []byte{0}, make([]uint64, 64)
+	require.Empty(t, UnpackInto(nil, res))
+	require.Empty(t, UnpackInto([]byte{}, res))
+	require.Empty(t, UnpackInto(buf, res))
+	require.Empty(t, UnpackInto(buf, nil))
+
+	require.Empty(t, Unpack(nil))
+	require.Empty(t, Unpack([]byte{}))
+	require.Empty(t, Unpack(buf))
 }
 
 func TestAllByteWidths(t *testing.T) {
