@@ -39,7 +39,17 @@ func Pack(data []uint64) []byte {
 // UnpackInto decompresses a compressed byte slice into a pre-existing slice of
 // uint64 values (which will be allocated / grown in case its capacity is insufficient)
 func UnpackInto(b []byte, res []uint64) []uint64 {
+
+	// If the byte slice is empty, truncate and return the buffer
+	if len(b) == 0 {
+		return res[:0]
+	}
+
+	// If the number of unpacked bytes is zero, truncate and return the buffer
 	neededBytes := int(b[0])
+	if neededBytes == 0 {
+		return res[:0]
+	}
 	nElements := (len(b) - 1) / neededBytes
 
 	if cap(res) < nElements {
@@ -73,7 +83,17 @@ func UnpackInto(b []byte, res []uint64) []uint64 {
 // Unpack decompresses a previously compressed data slice into the original slice of
 // uint64 values
 func Unpack(b []byte) []uint64 {
+
+	// If the byte slice is empty, return an empty result
+	if len(b) == 0 {
+		return []uint64{}
+	}
+
+	// If the number of unpacked bytes is zero, return an empty result
 	neededBytes := int(b[0])
+	if neededBytes == 0 {
+		return []uint64{}
+	}
 	nElements := (len(b) - 1) / neededBytes
 	res := make([]uint64, nElements)
 
