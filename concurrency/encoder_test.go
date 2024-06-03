@@ -22,13 +22,11 @@ func TestEncoderChain(t *testing.T) {
 	output := bytes.NewBuffer(nil)
 
 	ec := NewEncoderChain(output, JSONEncoder).AddWriter(GZIPWriter).Build()
-	require.Nil(t, ec.Encode(input))
-	require.Nil(t, ec.Close())
+	require.Nil(t, ec.EncodeAndClose(input))
 
 	var res testStruct
 	dc := NewDecoderChain(output, JSONDecoder).AddReader(GZIPReader).Build()
-	require.Nil(t, dc.Decode(&res))
-	require.Nil(t, dc.Close())
+	require.Nil(t, dc.DecodeAndClose(&res))
 
 	require.EqualValues(t, input, res)
 }

@@ -117,6 +117,13 @@ func (ec *EncoderChain) Close() error {
 	return nil
 }
 
+func (ec *EncoderChain) EncodeAndClose(v any) error {
+	if err := ec.Encode(v); err != nil {
+		return err
+	}
+	return ec.Close()
+}
+
 func (dc *DecoderChain) AddReader(fn ReaderFn) *DecoderChain {
 	dc.readerFns = append(dc.readerFns, fn)
 	return dc
@@ -161,4 +168,11 @@ func (dc *DecoderChain) Close() error {
 		}
 	}
 	return nil
+}
+
+func (dc *DecoderChain) DecodeAndClose(v any) error {
+	if err := dc.Decode(v); err != nil {
+		return err
+	}
+	return dc.Close()
 }
