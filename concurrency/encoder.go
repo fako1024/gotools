@@ -77,6 +77,9 @@ func (ec *EncoderChain) Build() *EncoderChain {
 // TODO: Add convenience Shizzl for Encoders / Decoders
 
 func (ec *EncoderChain) Encode(v any) error {
+	if ec.encoderFn == nil {
+		return nil
+	}
 	return ec.encoderFn(ec.writer).Encode(v)
 }
 
@@ -119,6 +122,9 @@ func (dc *DecoderChain) Build() *DecoderChain {
 func (dc *DecoderChain) Decode(v any) error {
 	if dc.buildErr != nil {
 		return dc.buildErr
+	}
+	if dc.decoderFn == nil {
+		return nil
 	}
 	return dc.decoderFn(dc.reader).Decode(v)
 }
