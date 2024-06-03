@@ -1,7 +1,11 @@
 package concurrency
 
 import (
+	"compress/gzip"
 	"io"
+
+	jsoniter "github.com/json-iterator/go"
+	yaml "gopkg.in/yaml.v3"
 )
 
 type Encoder interface {
@@ -75,6 +79,27 @@ func (ec *EncoderChain) Build() *EncoderChain {
 }
 
 // TODO: Add convenience Shizzl for Encoders / Decoders
+
+var (
+	JSONEncoder = func(w io.Writer) Encoder {
+		return jsoniter.NewEncoder(w)
+	}
+	JSONDecoder = func(r io.Reader) Decoder {
+		return jsoniter.NewDecoder(r)
+	}
+	YAMLEncoder = func(w io.Writer) Encoder {
+		return yaml.NewEncoder(w)
+	}
+	YAMLDecoder = func(r io.Reader) Decoder {
+		return yaml.NewDecoder(r)
+	}
+	GZIPWriter = func(w io.Writer) io.Writer {
+		return gzip.NewWriter(w)
+	}
+	GZIPReader = func(r io.Reader) (io.Reader, error) {
+		return gzip.NewReader(r)
+	}
+)
 
 func (ec *EncoderChain) Encode(v any) error {
 	if ec.encoderFn == nil {

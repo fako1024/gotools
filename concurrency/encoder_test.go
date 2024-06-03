@@ -3,10 +3,9 @@ package concurrency
 import (
 	"bytes"
 	"compress/gzip"
-	"encoding/json"
-	"io"
 	"testing"
 
+	jsoniter "github.com/json-iterator/go"
 	"github.com/stretchr/testify/require"
 )
 
@@ -21,22 +20,13 @@ func TestEncoderChain(t *testing.T) {
 
 	input := testStruct{Name: "foo", Value: 42}
 	output := bytes.NewBuffer(nil)
-	ec := NewEncoderChain(output, func(w io.Writer) Encoder {
-		return json.NewEncoder(w)
-	}).AddWriter(func(w io.Writer) io.Writer {
-		return gzip.NewWriter(w)
-	}).Build()
 
+	ec := NewEncoderChain(output, JSONEncoder).AddWriter(GZIPWriter).Build()
 	require.Nil(t, ec.Encode(input))
 	require.Nil(t, ec.Close())
 
 	var res testStruct
-	dc := NewDecoderChain(output, func(r io.Reader) Decoder {
-		return json.NewDecoder(r)
-	}).AddReader(func(r io.Reader) (io.Reader, error) {
-		return gzip.NewReader(r)
-	}).Build()
-
+	dc := NewDecoderChain(output, JSONDecoder).AddReader(GZIPReader).Build()
 	require.Nil(t, dc.Decode(&res))
 	require.Nil(t, dc.Close())
 
@@ -51,7 +41,7 @@ func BenchmarkEncoderChain(b *testing.B) {
 		for i := 0; i < b.N; i++ {
 			output := bytes.NewBuffer(nil)
 
-			enc, _ := json.Marshal(input)
+			enc, _ := jsoniter.Marshal(input)
 			gz := gzip.NewWriter(output)
 			_, _ = gz.Write(enc)
 			gz.Close()
@@ -63,11 +53,7 @@ func BenchmarkEncoderChain(b *testing.B) {
 		b.ReportAllocs()
 		for i := 0; i < b.N; i++ {
 			output := bytes.NewBuffer(nil)
-			ec := NewEncoderChain(output, func(w io.Writer) Encoder {
-				return json.NewEncoder(w)
-			}).AddWriter(func(w io.Writer) io.Writer {
-				return gzip.NewWriter(w)
-			}).Build()
+			ec := NewEncoderChain(output, JSONEncoder).AddWriter(GZIPWriter).Build()
 
 			_ = ec.Encode(input)
 			_ = ec.Close()
