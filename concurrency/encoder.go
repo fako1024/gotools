@@ -8,6 +8,27 @@ import (
 	yaml "gopkg.in/yaml.v3"
 )
 
+var (
+	JSONEncoder = func(w io.Writer) Encoder {
+		return jsoniter.NewEncoder(w)
+	}
+	JSONDecoder = func(r io.Reader) Decoder {
+		return jsoniter.NewDecoder(r)
+	}
+	YAMLEncoder = func(w io.Writer) Encoder {
+		return yaml.NewEncoder(w)
+	}
+	YAMLDecoder = func(r io.Reader) Decoder {
+		return yaml.NewDecoder(r)
+	}
+	GZIPWriter = func(w io.Writer) io.Writer {
+		return gzip.NewWriter(w)
+	}
+	GZIPReader = func(r io.Reader) (io.Reader, error) {
+		return gzip.NewReader(r)
+	}
+)
+
 type Encoder interface {
 	Encode(v any) error
 }
@@ -28,6 +49,7 @@ type EncoderChain struct {
 	writerFns []WriterFn
 
 	closers []io.Closer
+	postFn  func(w io.Writer) error
 }
 
 type DecoderChain struct {
@@ -37,6 +59,7 @@ type DecoderChain struct {
 
 	buildErr error
 	closers  []io.Closer
+	postFn   func(r io.Reader) error
 }
 
 func NewDecoderChain(r io.Reader, fn DecoderFn) *DecoderChain {
@@ -60,6 +83,11 @@ func (ec *EncoderChain) AddWriter(fn WriterFn) *EncoderChain {
 	return ec
 }
 
+func (ec *EncoderChain) PostFn(fn func(w io.Writer) error) *EncoderChain {
+	ec.postFn = fn
+	return ec
+}
+
 func (ec *EncoderChain) Build() *EncoderChain {
 	w := ec.writer
 	if wCloser, ok := w.(io.Closer); ok {
@@ -78,29 +106,6 @@ func (ec *EncoderChain) Build() *EncoderChain {
 	return ec
 }
 
-// TODO: Add convenience Shizzl for Encoders / Decoders
-
-var (
-	JSONEncoder = func(w io.Writer) Encoder {
-		return jsoniter.NewEncoder(w)
-	}
-	JSONDecoder = func(r io.Reader) Decoder {
-		return jsoniter.NewDecoder(r)
-	}
-	YAMLEncoder = func(w io.Writer) Encoder {
-		return yaml.NewEncoder(w)
-	}
-	YAMLDecoder = func(r io.Reader) Decoder {
-		return yaml.NewDecoder(r)
-	}
-	GZIPWriter = func(w io.Writer) io.Writer {
-		return gzip.NewWriter(w)
-	}
-	GZIPReader = func(r io.Reader) (io.Reader, error) {
-		return gzip.NewReader(r)
-	}
-)
-
 func (ec *EncoderChain) Encode(v any) error {
 	if ec.encoderFn == nil {
 		return nil
@@ -114,6 +119,9 @@ func (ec *EncoderChain) Close() error {
 			return err
 		}
 	}
+	if ec.postFn != nil {
+		return ec.postFn(ec.writer)
+	}
 	return nil
 }
 
@@ -126,6 +134,11 @@ func (ec *EncoderChain) EncodeAndClose(v any) error {
 
 func (dc *DecoderChain) AddReader(fn ReaderFn) *DecoderChain {
 	dc.readerFns = append(dc.readerFns, fn)
+	return dc
+}
+
+func (dc *DecoderChain) PostFn(fn func(r io.Reader) error) *DecoderChain {
+	dc.postFn = fn
 	return dc
 }
 
@@ -166,6 +179,9 @@ func (dc *DecoderChain) Close() error {
 		if err := dc.closers[i].Close(); err != nil {
 			return err
 		}
+	}
+	if dc.postFn != nil {
+		return dc.postFn(dc.reader)
 	}
 	return nil
 }

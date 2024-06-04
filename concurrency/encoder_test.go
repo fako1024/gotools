@@ -3,6 +3,7 @@ package concurrency
 import (
 	"bytes"
 	"compress/gzip"
+	"io"
 	"testing"
 
 	jsoniter "github.com/json-iterator/go"
@@ -16,10 +17,32 @@ type testStruct struct {
 
 // Prototype / use case: https://github.com/open-telemetry/opentelemetry-collector/blob/4bbb60402f262214aecacb24839e75159143a43f/receiver/otlpreceiver/otlphttp.go#L58
 
-func TestEncoderChain(t *testing.T) {
-
+func TestSimpleEncode(t *testing.T) {
 	input := testStruct{Name: "foo", Value: 42}
-	output := bytes.NewBuffer(nil)
+	output := bytes.NewBuffer([]byte{})
+
+	buf := ""
+	ec := NewEncoderChain(output, JSONEncoder).PostFn(func(w io.Writer) error {
+		buf = "executed encode post-function"
+		return nil
+	}).Build()
+	require.Nil(t, ec.EncodeAndClose(input))
+	require.EqualValues(t, buf, "executed encode post-function")
+
+	var res testStruct
+	dc := NewDecoderChain(output, JSONDecoder).PostFn(func(r io.Reader) error {
+		buf = "executed decode post-function"
+		return nil
+	}).Build()
+	require.Nil(t, dc.DecodeAndClose(&res))
+	require.EqualValues(t, buf, "executed decode post-function")
+
+	require.EqualValues(t, input, res)
+}
+
+func TestEncoderChain(t *testing.T) {
+	input := testStruct{Name: "foo", Value: 42}
+	output := bytes.NewBuffer([]byte{})
 
 	ec := NewEncoderChain(output, JSONEncoder).AddWriter(GZIPWriter).Build()
 	require.Nil(t, ec.EncodeAndClose(input))
