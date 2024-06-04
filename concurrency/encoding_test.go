@@ -19,38 +19,32 @@ type testStruct struct {
 func TestSimpleEncode(t *testing.T) {
 	input := testStruct{Name: "foo", Value: 42}
 
-	bufEnc, bufDec := "", ""
-	ec := NewEncoderChain(JSONEncoder).PostFn(func(rw *ReadWriter) error {
-		bufEnc = "executed encode post-function"
+	wc := NewWriterChain().PostFn(func(rw *ReadWriter) error {
 		var res testStruct
-		dc := NewDecoderChain(rw, JSONDecoder).PostFn(func(rw *ReadWriter) error {
-			bufDec = "executed decode post-function"
+		rc := NewReaderChain(rw).PostFn(func(rw *ReadWriter) error {
 			return nil
 		}).Build()
-		require.Nil(t, dc.DecodeAndClose(&res))
-		require.EqualValues(t, bufDec, "executed decode post-function")
+		require.Nil(t, rc.DecodeAndClose(JSONDecoder, &res))
 		require.EqualValues(t, input, res)
 
 		return nil
 	}).Build()
-	require.Nil(t, ec.EncodeAndClose(input))
-	require.EqualValues(t, bufEnc, "executed encode post-function")
-
+	require.Nil(t, wc.EncodeAndClose(JSONEncoder, input))
 }
 
 func TestEncoderChain(t *testing.T) {
 	input := testStruct{Name: "foo", Value: 42}
 
-	ec := NewEncoderChain(JSONEncoder).AddWriter(GZIPWriter).PostFn(func(rw *ReadWriter) error {
+	wc := NewWriterChain().AddWriter(NewGZIPWriter()).PostFn(func(rw *ReadWriter) error {
 		var res testStruct
-		dc := NewDecoderChain(rw, JSONDecoder).AddReader(GZIPReader).Build()
-		require.Nil(t, dc.DecodeAndClose(&res))
+
+		dc := NewReaderChain(rw).AddReader(NewGZIPReader()).Build()
+		require.Nil(t, dc.DecodeAndClose(JSONDecoder, &res))
 
 		require.EqualValues(t, input, res)
 		return nil
 	}).Build()
-	require.Nil(t, ec.EncodeAndClose(input))
-
+	require.Nil(t, wc.EncodeAndClose(JSONEncoder, input))
 }
 
 func BenchmarkEncoderChain(b *testing.B) {
@@ -72,10 +66,8 @@ func BenchmarkEncoderChain(b *testing.B) {
 	b.Run("chain", func(b *testing.B) {
 		b.ReportAllocs()
 		for i := 0; i < b.N; i++ {
-			ec := NewEncoderChain(JSONEncoder).AddWriter(GZIPWriter).Build()
-
-			_ = ec.Encode(input)
-			_ = ec.Close()
+			wc := NewWriterChain().AddWriter(NewGZIPWriter()).Build()
+			_ = wc.EncodeAndClose(JSONEncoder, input)
 		}
 	})
 

@@ -7,6 +7,8 @@ import (
 	"unsafe"
 )
 
+var defaultMemPool = NewMemPoolNoLimit()
+
 // ReadWriteSeekCloser provides an interface to all the wrapped interfaces
 // in one instance
 type ReadWriteSeekCloser interface {
