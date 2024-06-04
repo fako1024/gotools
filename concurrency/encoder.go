@@ -8,6 +8,8 @@ import (
 	yaml "gopkg.in/yaml.v3"
 )
 
+var defaultMemPool = NewMemPoolNoLimit()
+
 var (
 	JSONEncoder = func(w io.Writer) Encoder {
 		return jsoniter.NewEncoder(w)
@@ -44,35 +46,42 @@ type WriterFn func(w io.Writer) io.Writer
 type EncoderFn func(w io.Writer) Encoder
 
 type EncoderChain struct {
+	memPool *MemPoolNoLimit
+
+	dest      *ReadWriter
 	writer    io.Writer
 	encoderFn EncoderFn
 	writerFns []WriterFn
 
 	closers []io.Closer
-	postFn  func(w io.Writer) error
+	postFn  func(rw *ReadWriter) error
 }
 
 type DecoderChain struct {
+	memPool *MemPoolNoLimit
+
+	dest      *ReadWriter
 	reader    io.Reader
 	decoderFn DecoderFn
 	readerFns []ReaderFn
 
 	buildErr error
 	closers  []io.Closer
-	postFn   func(r io.Reader) error
+	postFn   func(rw *ReadWriter) error
 }
 
 func NewDecoderChain(r io.Reader, fn DecoderFn) *DecoderChain {
 	return &DecoderChain{
 		reader:    r,
+		memPool:   defaultMemPool,
 		decoderFn: fn,
 		readerFns: make([]ReaderFn, 0),
 	}
 }
 
-func NewEncoderChain(w io.Writer, fn EncoderFn) *EncoderChain {
+func NewEncoderChain(fn EncoderFn) *EncoderChain {
 	return &EncoderChain{
-		writer:    w,
+		memPool:   defaultMemPool,
 		encoderFn: fn,
 		writerFns: make([]WriterFn, 0),
 	}
@@ -83,16 +92,21 @@ func (ec *EncoderChain) AddWriter(fn WriterFn) *EncoderChain {
 	return ec
 }
 
-func (ec *EncoderChain) PostFn(fn func(w io.Writer) error) *EncoderChain {
+func (ec *EncoderChain) MemPool(memPool *MemPoolNoLimit) *EncoderChain {
+	ec.memPool = memPool
+	return ec
+}
+
+func (ec *EncoderChain) PostFn(fn func(rw *ReadWriter) error) *EncoderChain {
 	ec.postFn = fn
 	return ec
 }
 
 func (ec *EncoderChain) Build() *EncoderChain {
-	w := ec.writer
-	if wCloser, ok := w.(io.Closer); ok {
-		ec.closers = append(ec.closers, wCloser)
-	}
+
+	var w io.Writer
+	ec.dest = ec.memPool.GetReadWriter(0)
+	w = ec.dest
 
 	for _, fn := range ec.writerFns {
 		addW := fn(w)
@@ -120,7 +134,7 @@ func (ec *EncoderChain) Close() error {
 		}
 	}
 	if ec.postFn != nil {
-		return ec.postFn(ec.writer)
+		return ec.postFn(ec.dest)
 	}
 	return nil
 }
@@ -137,7 +151,12 @@ func (dc *DecoderChain) AddReader(fn ReaderFn) *DecoderChain {
 	return dc
 }
 
-func (dc *DecoderChain) PostFn(fn func(r io.Reader) error) *DecoderChain {
+func (dc *DecoderChain) MemPool(memPool *MemPoolNoLimit) *DecoderChain {
+	dc.memPool = memPool
+	return dc
+}
+
+func (dc *DecoderChain) PostFn(fn func(rw *ReadWriter) error) *DecoderChain {
 	dc.postFn = fn
 	return dc
 }
@@ -181,7 +200,7 @@ func (dc *DecoderChain) Close() error {
 		}
 	}
 	if dc.postFn != nil {
-		return dc.postFn(dc.reader)
+		return dc.postFn(dc.dest)
 	}
 	return nil
 }

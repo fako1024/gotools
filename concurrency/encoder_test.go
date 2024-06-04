@@ -3,7 +3,6 @@ package concurrency
 import (
 	"bytes"
 	"compress/gzip"
-	"io"
 	"testing"
 
 	jsoniter "github.com/json-iterator/go"
@@ -19,39 +18,39 @@ type testStruct struct {
 
 func TestSimpleEncode(t *testing.T) {
 	input := testStruct{Name: "foo", Value: 42}
-	output := bytes.NewBuffer([]byte{})
 
-	buf := ""
-	ec := NewEncoderChain(output, JSONEncoder).PostFn(func(w io.Writer) error {
-		buf = "executed encode post-function"
+	bufEnc, bufDec := "", ""
+	ec := NewEncoderChain(JSONEncoder).PostFn(func(rw *ReadWriter) error {
+		bufEnc = "executed encode post-function"
+		var res testStruct
+		dc := NewDecoderChain(rw, JSONDecoder).PostFn(func(rw *ReadWriter) error {
+			bufDec = "executed decode post-function"
+			return nil
+		}).Build()
+		require.Nil(t, dc.DecodeAndClose(&res))
+		require.EqualValues(t, bufDec, "executed decode post-function")
+		require.EqualValues(t, input, res)
+
 		return nil
 	}).Build()
 	require.Nil(t, ec.EncodeAndClose(input))
-	require.EqualValues(t, buf, "executed encode post-function")
+	require.EqualValues(t, bufEnc, "executed encode post-function")
 
-	var res testStruct
-	dc := NewDecoderChain(output, JSONDecoder).PostFn(func(r io.Reader) error {
-		buf = "executed decode post-function"
-		return nil
-	}).Build()
-	require.Nil(t, dc.DecodeAndClose(&res))
-	require.EqualValues(t, buf, "executed decode post-function")
-
-	require.EqualValues(t, input, res)
 }
 
 func TestEncoderChain(t *testing.T) {
 	input := testStruct{Name: "foo", Value: 42}
-	output := bytes.NewBuffer([]byte{})
 
-	ec := NewEncoderChain(output, JSONEncoder).AddWriter(GZIPWriter).Build()
+	ec := NewEncoderChain(JSONEncoder).AddWriter(GZIPWriter).PostFn(func(rw *ReadWriter) error {
+		var res testStruct
+		dc := NewDecoderChain(rw, JSONDecoder).AddReader(GZIPReader).Build()
+		require.Nil(t, dc.DecodeAndClose(&res))
+
+		require.EqualValues(t, input, res)
+		return nil
+	}).Build()
 	require.Nil(t, ec.EncodeAndClose(input))
 
-	var res testStruct
-	dc := NewDecoderChain(output, JSONDecoder).AddReader(GZIPReader).Build()
-	require.Nil(t, dc.DecodeAndClose(&res))
-
-	require.EqualValues(t, input, res)
 }
 
 func BenchmarkEncoderChain(b *testing.B) {
@@ -73,8 +72,7 @@ func BenchmarkEncoderChain(b *testing.B) {
 	b.Run("chain", func(b *testing.B) {
 		b.ReportAllocs()
 		for i := 0; i < b.N; i++ {
-			output := bytes.NewBuffer(nil)
-			ec := NewEncoderChain(output, JSONEncoder).AddWriter(GZIPWriter).Build()
+			ec := NewEncoderChain(JSONEncoder).AddWriter(GZIPWriter).Build()
 
 			_ = ec.Encode(input)
 			_ = ec.Close()

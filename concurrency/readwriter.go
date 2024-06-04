@@ -1,6 +1,8 @@
 package concurrency
 
-import "io"
+import (
+	"io"
+)
 
 // minBufferSize is an initial allocation minimal capacity.
 const minBufferSize = 64
