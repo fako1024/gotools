@@ -176,22 +176,22 @@ func (wc *WriterChain) Build() *WriterChain {
 }
 
 // Close closes the Writer chain, flushing all underlying Writers
-func (wc *WriterChain) Close() error {
+func (wc *WriterChain) Close() (err error) {
 	defer wc.memPool.PutReadWriter(wc.dest)
 
 	for i := len(wc.closers) - 1; i >= 0; i-- {
-		if err := wc.closers[i].Close(); err != nil {
-			return err
+		if err = wc.closers[i].Close(); err != nil {
+			return
 		}
 	}
 	if wc.postFn != nil {
-		return wc.postFn(wc.dest)
+		err = wc.postFn(wc.dest)
 	}
 	for _, writer := range wc.writers {
 		writer.Close()
 	}
 
-	return nil
+	return err
 }
 
 // Encode encodes the output of the chain of Writers into an object using the provided encoder function
@@ -275,19 +275,19 @@ func (rc *ReaderChain) Build() *ReaderChain {
 }
 
 // Close closes the Reader chain, flushing all underlying Readers
-func (rc *ReaderChain) Close() error {
+func (rc *ReaderChain) Close() (err error) {
 	for i := len(rc.closers) - 1; i >= 0; i-- {
-		if err := rc.closers[i].Close(); err != nil {
-			return err
+		if err = rc.closers[i].Close(); err != nil {
+			return
 		}
 	}
 	if rc.postFn != nil {
-		return rc.postFn(rc.dest)
+		err = rc.postFn(rc.dest)
 	}
 	for _, reader := range rc.readers {
 		reader.Close()
 	}
-	return nil
+	return err
 }
 
 // Decode decodes from an object using the provided decoder function
