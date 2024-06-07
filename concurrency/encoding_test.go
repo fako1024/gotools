@@ -34,17 +34,23 @@ func TestSimpleEncode(t *testing.T) {
 
 func TestEncoderChain(t *testing.T) {
 	input := testStruct{Name: "foo", Value: 42}
+	ref, err := encodeManual(input)
+	require.Nil(t, err)
 
-	wc := NewWriterChain().AddWriter(NewGZIPWriter()).PostFn(func(rw *ReadWriter) error {
-		var res testStruct
+	// Repeat test a couple of times to trigger pool re-use scenario
+	for i := 0; i < 100; i++ {
+		wc := NewWriterChain().AddWriter(NewGZIPWriter()).PostFn(func(rw *ReadWriter) error {
+			var res testStruct
+			require.Equal(t, ref, rw.BytesCopy())
 
-		dc := NewReaderChain(rw).AddReader(NewGZIPReader()).Build()
-		require.Nil(t, dc.DecodeAndClose(JSONDecoder, &res))
+			dc := NewReaderChain(rw).AddReader(NewGZIPReader()).Build()
+			require.Nil(t, dc.DecodeAndClose(JSONDecoder, &res))
 
-		require.EqualValues(t, input, res)
-		return nil
-	}).Build()
-	require.Nil(t, wc.EncodeAndClose(JSONEncoder, input))
+			require.EqualValues(t, input, res)
+			return nil
+		}).Build()
+		require.Nil(t, wc.EncodeAndClose(JSONEncoder, input))
+	}
 }
 
 func BenchmarkEncoderChain(b *testing.B) {
@@ -71,4 +77,26 @@ func BenchmarkEncoderChain(b *testing.B) {
 		}
 	})
 
+}
+
+func encodeManual(input any) ([]byte, error) {
+	enc, err := jsoniter.Marshal(input)
+	if err != nil {
+		return nil, err
+	}
+
+	// Append newline to mimic behavior of Encoder
+	// https://github.com/golang/go/issues/37083
+	enc = append(enc, []byte("\n")...)
+
+	buf := bytes.NewBuffer(nil)
+	gzw := gzip.NewWriter(buf)
+	if _, err = gzw.Write(enc); err != nil {
+		return nil, err
+	}
+	if err := gzw.Close(); err != nil {
+		return nil, err
+	}
+
+	return buf.Bytes(), nil
 }

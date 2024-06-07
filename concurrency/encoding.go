@@ -10,18 +10,7 @@ import (
 	yaml "gopkg.in/yaml.v3"
 )
 
-var (
-	gzipWPool = sync.Pool{
-		New: func() any {
-			return &gzip.Writer{}
-		},
-	}
-	gzipRPool = sync.Pool{
-		New: func() any {
-			return &gzip.Reader{}
-		},
-	}
-)
+var gzipWPool, gzipRPool sync.Pool
 
 var (
 	JSONEncoder = func(w io.Writer) Encoder {
@@ -41,13 +30,15 @@ var (
 // Writer denotes a generic writer interface (enforcing an initialization and closing method)
 type Writer interface {
 	Init(w io.Writer) io.Writer
-	Close()
+	Close() error
+	Return()
 }
 
 // Reader denotes a generic reader interface (enforcing an initialization and closing method)
 type Reader interface {
 	Init(r io.Reader) (io.Reader, error)
-	Close()
+	Close() error
+	Return()
 }
 
 // GZIPWriter provides a wrapper around a standard gzip.Writer instance
@@ -57,19 +48,30 @@ type GZIPWriter struct {
 
 // NewGZIPWriter initializes a new (wrapped) gzip.Writer instance, fulfilling the Writer interface
 func NewGZIPWriter() *GZIPWriter {
-	return &GZIPWriter{
-		Writer: gzipWPool.Get().(*gzip.Writer),
-	}
+	return &GZIPWriter{}
 }
 
 // Init resets a (wrapped) gzip.Writer instance from the pool for reuse
 func (g *GZIPWriter) Init(w io.Writer) io.Writer {
-	g.Reset(w)
+	var gz *gzip.Writer
+	if gzI := gzipWPool.Get(); gzI == nil {
+		gz = gzip.NewWriter(w)
+	} else {
+		gz = gzI.(*gzip.Writer)
+		gz.Reset(w)
+	}
+	g.Writer = gz
+
 	return g.Writer
 }
 
-// Close returns a (wrapped) gzip.Writer instance to the pool
-func (g *GZIPWriter) Close() {
+// Close closes a (wrapped) gzip.Writer instance
+func (g *GZIPWriter) Close() error {
+	return g.Writer.Close()
+}
+
+// Return returns a (wrapped) gzip.Writer instance to the pool
+func (g *GZIPWriter) Return() {
 	gzipWPool.Put(g.Writer)
 }
 
@@ -80,19 +82,33 @@ type GZIPReader struct {
 
 // NewGZIPReader initializes a new (wrapped) gzip.Reader instance, fulfilling the Reader interface
 func NewGZIPReader() *GZIPReader {
-	return &GZIPReader{
-		Reader: gzipRPool.Get().(*gzip.Reader),
-	}
+	return &GZIPReader{}
 }
 
 // Init resets a (wrapped) gzip.Reader instance from the pool for reuse
 func (g *GZIPReader) Init(r io.Reader) (io.Reader, error) {
-	err := g.Reset(r)
+	var (
+		gz  *gzip.Reader
+		err error
+	)
+	if gzI := gzipRPool.Get(); gzI == nil {
+		gz, err = gzip.NewReader(r)
+	} else {
+		gz = gzI.(*gzip.Reader)
+		err = gz.Reset(r)
+	}
+	g.Reader = gz
+
 	return g.Reader, err
 }
 
-// Close returns a (wrapped) gzip.Reader instance to the pool
-func (g *GZIPReader) Close() {
+// Close closes a (wrapped) gzip.Reader instance
+func (g *GZIPReader) Close() error {
+	return g.Reader.Close()
+}
+
+// Return returns a (wrapped) gzip.Reader instance to the pool
+func (g *GZIPReader) Return() {
 	gzipRPool.Put(g.Reader)
 }
 
@@ -121,7 +137,6 @@ type EncoderFn func(w io.Writer) Encoder
 // WriterChain provides convenient access to a chained io.Writer sequence (and potentially encoding)
 type WriterChain struct {
 	writers []Writer
-	closers []io.Closer
 
 	postFn  func(rw *ReadWriter) error
 	dest    *ReadWriter
@@ -164,11 +179,7 @@ func (wc *WriterChain) Build() *WriterChain {
 	w = wc.dest
 
 	for _, writer := range wc.writers {
-		addW := writer.Init(w)
-		if addWCloser, ok := addW.(io.Closer); ok {
-			wc.closers = append(wc.closers, addWCloser)
-		}
-		w = addW
+		w = writer.Init(w)
 	}
 
 	wc.Writer = w
@@ -179,8 +190,8 @@ func (wc *WriterChain) Build() *WriterChain {
 func (wc *WriterChain) Close() (err error) {
 	defer wc.memPool.PutReadWriter(wc.dest)
 
-	for i := len(wc.closers) - 1; i >= 0; i-- {
-		if err = wc.closers[i].Close(); err != nil {
+	for i := len(wc.writers) - 1; i >= 0; i-- {
+		if err = wc.writers[i].Close(); err != nil {
 			return
 		}
 	}
@@ -188,7 +199,7 @@ func (wc *WriterChain) Close() (err error) {
 		err = wc.postFn(wc.dest)
 	}
 	for _, writer := range wc.writers {
-		writer.Close()
+		writer.Return()
 	}
 
 	return err
@@ -285,7 +296,7 @@ func (rc *ReaderChain) Close() (err error) {
 		err = rc.postFn(rc.dest)
 	}
 	for _, reader := range rc.readers {
-		reader.Close()
+		reader.Return()
 	}
 	return err
 }
