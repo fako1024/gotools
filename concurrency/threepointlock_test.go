@@ -32,6 +32,7 @@ func TestSimpleLock(t *testing.T) {
 			require.Nil(t, tpl.Unlock())
 		}
 		cancel()
+		tpl.Close()
 	})
 
 	for _, nConc := range []int{2, 3, 5, 10, 100} {
@@ -58,6 +59,7 @@ func TestSimpleLock(t *testing.T) {
 
 			wg.Wait()
 			cancel()
+			tpl.Close()
 		})
 	}
 }

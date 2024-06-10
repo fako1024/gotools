@@ -186,7 +186,14 @@ func (tpl *ThreePointLock) ConfirmLockRequest() {
 	tpl.confirm <- struct{}{}
 }
 
-// Release releases the semaphore back to the memory pool.
+// Release releases the semaphore back to the memory pool
 func (tpl *ThreePointLock) Release(sem Semaphore) {
 	tpl.memPool.Put(sem)
+}
+
+// Closes ensures that all channels are closed, releasing any potentially waiting goroutines
+func (tpl *ThreePointLock) Close() {
+	close(tpl.request)
+	close(tpl.confirm)
+	close(tpl.done)
 }
