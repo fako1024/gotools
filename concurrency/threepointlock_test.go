@@ -23,46 +23,53 @@ func TestSimpleLock(t *testing.T) {
 		tpl := NewThreePointLock()
 
 		ctx, cancel := context.WithCancel(context.Background())
-		go loop(ctx, tpl)
+		var wgLoop = &sync.WaitGroup{}
+		wgLoop.Add(1)
+		go loop(ctx, tpl, wgLoop)
 
 		for i := 0; i < nTestLockCycles; i++ {
 			err := tpl.Lock()
 			require.Nil(t, err)
-
 			require.Nil(t, tpl.Unlock())
 		}
 		cancel()
+		wgLoop.Wait()
 	})
 
 	for _, nConc := range []int{2, 3, 5, 10, 100} {
 		t.Run(fmt.Sprintf("multiple_%d", nConc), func(t *testing.T) {
-			tpl := NewThreePointLock(WithMemPool(NewMemPoolLimitUnique(nConc, 1)))
-
+			memPool := NewMemPoolLimitUnique(nConc, 1)
 			ctx, cancel := context.WithCancel(context.Background())
 
-			var wg sync.WaitGroup
+			var wg, wgLoop = &sync.WaitGroup{}, &sync.WaitGroup{}
+			wg.Add(nConc)
+			wgLoop.Add(nConc)
 			for i := 0; i < nConc; i++ {
-				go loop(ctx, tpl)
+				tpl := NewThreePointLock(WithMemPool(memPool))
 
-				wg.Add(1)
-				go func() {
+				go loop(ctx, tpl, wgLoop)
+				go func(tpl *ThreePointLock) {
 					for i := 0; i < nTestLockCycles; i++ {
-						err := tpl.Lock()
-						require.Nil(t, err)
-
-						require.Nil(t, tpl.Unlock())
+						tpl.MustLock()
+						tpl.MustUnlock()
 					}
 					wg.Done()
-				}()
+				}(tpl)
 			}
 
 			wg.Wait()
 			cancel()
+			wgLoop.Wait()
+			memPool.Clear()
 		})
 	}
 }
 
-func loop(ctx context.Context, tpl *ThreePointLock) {
+func loop(ctx context.Context, tpl *ThreePointLock, wg *sync.WaitGroup) {
+	defer func() {
+		wg.Done()
+		tpl.Close()
+	}()
 	for {
 		if tpl.HasLockRequest() {
 			sem := tpl.ConsumeLockRequest()

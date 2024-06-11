@@ -161,6 +161,13 @@ func (tpl *ThreePointLock) Unlock() (err error) {
 	return
 }
 
+// MustUnlock releases the lock (panics on failure)
+func (tpl *ThreePointLock) MustUnlock() {
+	if err := tpl.Unlock(); err != nil {
+		panic(fmt.Sprintf("failed to release three-point lock: %s", err))
+	}
+}
+
 // HasLockRequest checks if there is a lock request
 func (tpl *ThreePointLock) HasLockRequest() bool {
 	return len(tpl.request) > 0
@@ -186,7 +193,14 @@ func (tpl *ThreePointLock) ConfirmLockRequest() {
 	tpl.confirm <- struct{}{}
 }
 
-// Release releases the semaphore back to the memory pool.
+// Release releases the semaphore back to the memory pool
 func (tpl *ThreePointLock) Release(sem Semaphore) {
 	tpl.memPool.Put(sem)
+}
+
+// Closes ensures that all channels are closed, releasing any potentially waiting goroutines
+func (tpl *ThreePointLock) Close() {
+	close(tpl.request)
+	close(tpl.confirm)
+	close(tpl.done)
 }
