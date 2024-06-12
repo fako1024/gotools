@@ -12,6 +12,7 @@ import (
 
 var gzipWPool, gzipRPool sync.Pool
 
+// Some default encoder wrapper / convenience functions
 var (
 	JSONEncoder = func(w io.Writer) Encoder {
 		return jsoniter.NewEncoder(w)

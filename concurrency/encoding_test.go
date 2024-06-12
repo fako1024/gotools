@@ -6,6 +6,8 @@ import (
 	"testing"
 
 	jsoniter "github.com/json-iterator/go"
+	yaml "gopkg.in/yaml.v3"
+
 	"github.com/stretchr/testify/require"
 )
 
@@ -14,42 +16,80 @@ type testStruct struct {
 	Value int
 }
 
-// Prototype / use case: https://github.com/open-telemetry/opentelemetry-collector/blob/4bbb60402f262214aecacb24839e75159143a43f/receiver/otlpreceiver/otlphttp.go#L58
+type testCase struct {
+	name       string
+	encoder    EncoderFn
+	decoder    DecoderFn
+	refEncoder func(any) ([]byte, error)
+}
 
 func TestSimpleEncode(t *testing.T) {
 	input := testStruct{Name: "foo", Value: 42}
 
-	wc := NewWriterChain().PostFn(func(rw *ReadWriter) error {
-		var res testStruct
-		rc := NewReaderChain(rw).PostFn(func(rw *ReadWriter) error {
-			return nil
-		}).Build()
-		require.Nil(t, rc.DecodeAndClose(JSONDecoder, &res))
-		require.EqualValues(t, input, res)
+	for _, cs := range []testCase{
+		{
+			name:    "JSON",
+			encoder: JSONEncoder,
+			decoder: JSONDecoder,
+		},
+		{
+			name:    "YAML",
+			encoder: YAMLEncoder,
+			decoder: YAMLDecoder,
+		},
+	} {
+		t.Run(cs.name, func(t *testing.T) {
+			wc := NewWriterChain().PostFn(func(rw *ReadWriter) error {
+				var res testStruct
+				rc := NewReaderChain(rw).PostFn(func(rw *ReadWriter) error {
+					return nil
+				}).Build()
+				require.Nil(t, rc.DecodeAndClose(cs.decoder, &res))
+				require.EqualValues(t, input, res)
 
-		return nil
-	}).Build()
-	require.Nil(t, wc.EncodeAndClose(JSONEncoder, input))
+				return nil
+			}).Build()
+			require.Nil(t, wc.EncodeAndClose(cs.encoder, input))
+		})
+	}
 }
 
 func TestEncoderChain(t *testing.T) {
 	input := testStruct{Name: "foo", Value: 42}
-	ref, err := encodeManual(input)
-	require.Nil(t, err)
 
-	// Repeat test a couple of times to trigger pool re-use scenario
-	for i := 0; i < 100; i++ {
-		wc := NewWriterChain().AddWriter(NewGZIPWriter()).PostFn(func(rw *ReadWriter) error {
-			var res testStruct
-			require.Equal(t, ref, rw.BytesCopy())
+	for _, cs := range []testCase{
+		{
+			name:       "JSON",
+			encoder:    JSONEncoder,
+			decoder:    JSONDecoder,
+			refEncoder: encodeManualJSON,
+		},
+		{
+			name:       "YAML",
+			encoder:    YAMLEncoder,
+			decoder:    YAMLDecoder,
+			refEncoder: encodeManualYAML,
+		},
+	} {
+		t.Run(cs.name, func(t *testing.T) {
+			ref, err := cs.refEncoder(input)
+			require.Nil(t, err)
 
-			dc := NewReaderChain(rw).AddReader(NewGZIPReader()).Build()
-			require.Nil(t, dc.DecodeAndClose(JSONDecoder, &res))
+			// Repeat test a couple of times to trigger pool re-use scenario
+			for i := 0; i < 100; i++ {
+				wc := NewWriterChain().AddWriter(NewGZIPWriter()).PostFn(func(rw *ReadWriter) error {
+					var res testStruct
+					require.Equal(t, ref, rw.BytesCopy())
 
-			require.EqualValues(t, input, res)
-			return nil
-		}).Build()
-		require.Nil(t, wc.EncodeAndClose(JSONEncoder, input))
+					dc := NewReaderChain(rw).AddReader(NewGZIPReader()).Build()
+					require.Nil(t, dc.DecodeAndClose(cs.decoder, &res))
+
+					require.EqualValues(t, input, res)
+					return nil
+				}).Build()
+				require.Nil(t, wc.EncodeAndClose(cs.encoder, input))
+			}
+		})
 	}
 }
 
@@ -64,8 +104,7 @@ func BenchmarkEncoderChain(b *testing.B) {
 			enc, _ := jsoniter.Marshal(input)
 			gz := gzip.NewWriter(output)
 			_, _ = gz.Write(enc)
-			gz.Close()
-
+			_ = gz.Close()
 		}
 	})
 
@@ -79,7 +118,7 @@ func BenchmarkEncoderChain(b *testing.B) {
 
 }
 
-func encodeManual(input any) ([]byte, error) {
+func encodeManualJSON(input any) ([]byte, error) {
 	enc, err := jsoniter.Marshal(input)
 	if err != nil {
 		return nil, err
@@ -89,9 +128,22 @@ func encodeManual(input any) ([]byte, error) {
 	// https://github.com/golang/go/issues/37083
 	enc = append(enc, []byte("\n")...)
 
+	return gzipManual(enc)
+}
+
+func encodeManualYAML(input any) ([]byte, error) {
+	enc, err := yaml.Marshal(input)
+	if err != nil {
+		return nil, err
+	}
+
+	return gzipManual(enc)
+}
+
+func gzipManual(input []byte) ([]byte, error) {
 	buf := bytes.NewBuffer(nil)
 	gzw := gzip.NewWriter(buf)
-	if _, err = gzw.Write(enc); err != nil {
+	if _, err := gzw.Write(input); err != nil {
 		return nil, err
 	}
 	if err := gzw.Close(); err != nil {
