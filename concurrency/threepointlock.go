@@ -11,6 +11,14 @@ var (
 	// ErrLockConfirmTimeout signifies that the lock request has not been confirmed
 	// by the main routine (in a timely manner)
 	ErrLockConfirmTimeout = errors.New("timeout waiting for lock confirmation")
+
+	// ErrLockNotifyTimeout signifies that the lock request could not be sent
+	// to the main routine (in a timely manner), e.g. because it wasn't handled
+	ErrLockNotifyTimeout = errors.New("timeout notifying for lock")
+
+	// ErrUnlockConfirmTimeout signifies that the unlock request has not been confirmed
+	// by the main routine (in a timely manner)
+	ErrUnlockConfirmTimeout = errors.New("timeout waiting for unlock confirmation")
 )
 
 // Semaphore is simply the underlying byte slice (from a memory pool), serving
@@ -109,7 +117,21 @@ func (tpl *ThreePointLock) Lock() (err error) {
 	sem := tpl.memPool.Get(tpl.memPool.initialElementSize)
 
 	// Notify the main routine that a locked interaction is about to begin
-	tpl.request <- sem
+	// If no timeout has been specified, wait forever
+	if tpl.timeout == 0 {
+		tpl.request <- sem
+	} else {
+
+		// If a timeout has been specified, wait until it expires
+		select {
+		case tpl.request <- sem:
+			break
+		case <-time.After(tpl.timeout):
+			err = ErrLockNotifyTimeout
+			tpl.memPool.Put(sem) // Return semaphore on failure
+			return
+		}
+	}
 
 	// Execute optional pre-lock function (e.g. an unblock command or similar)
 	if tpl.lockRequestFn != nil {
@@ -149,7 +171,19 @@ func (tpl *ThreePointLock) MustLock() {
 func (tpl *ThreePointLock) Unlock() (err error) {
 
 	// Signal that the lock is complete / done, releasing the main routine
-	tpl.done <- struct{}{}
+	// If no timeout has been specified, wait forever
+	if tpl.timeout == 0 {
+		tpl.done <- struct{}{}
+	} else {
+		// If a timeout has been specified, wait until it expires
+		select {
+		case tpl.done <- struct{}{}:
+			break
+		case <-time.After(tpl.timeout):
+			err = ErrUnlockConfirmTimeout
+			return
+		}
+	}
 
 	// Execute optional post-lock function (e.g. an unblock command or similar)
 	if tpl.unlockRequestFn != nil {
@@ -198,7 +232,7 @@ func (tpl *ThreePointLock) Release(sem Semaphore) {
 	tpl.memPool.Put(sem)
 }
 
-// Closes ensures that all channels are closed, releasing any potentially waiting goroutines
+// Close ensures that all channels are closed, releasing any potentially waiting goroutines
 func (tpl *ThreePointLock) Close() {
 	close(tpl.request)
 	close(tpl.confirm)
