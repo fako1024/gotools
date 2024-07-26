@@ -3,6 +3,7 @@ package concurrency
 import (
 	"compress/gzip"
 	"errors"
+	"fmt"
 	"io"
 	"sync"
 
@@ -10,7 +11,65 @@ import (
 	yaml "gopkg.in/yaml.v3"
 )
 
-var gzipWPool, gzipRPool sync.Pool
+var (
+	gzipWPool, gzipRPool sync.Pool
+
+	// ErrExpectByteSlicePtr denotes that the assertion of a byte slice pointer failed
+	ErrExpectByteSlicePtr = errors.New("expected byte slice reference / pointer argument")
+
+	// ErrExpectByteSlice denotes that the assertion of a byte slice failed
+	ErrExpectByteSlice = errors.New("expected byte slice argument")
+)
+
+// byteDecoder reads bytes from a Reader
+type byteDecoder struct {
+	io.Reader
+	zeroCopy bool
+}
+
+// Decode reads bytes from a Reader
+func (bd *byteDecoder) Decode(v any) error {
+	slice, ok := v.(*[]byte)
+	if !ok {
+		return ErrExpectByteSlicePtr
+	}
+
+	out, err := io.ReadAll(bd)
+	if err != nil {
+		return err
+	}
+
+	if bd.zeroCopy {
+		*slice = out
+	} else {
+		if len(*slice) < len(out) {
+			*slice = make([]byte, len(out))
+		}
+		copy(*slice, out)
+	}
+
+	return nil
+}
+
+// byteEncoder wrties bytes to a Writer
+type byteEncoder struct {
+	io.Writer
+}
+
+// Encode sends bytes down a writer
+func (be *byteEncoder) Encode(v any) error {
+	slice, ok := v.([]byte)
+	if !ok {
+		return ErrExpectByteSlice
+	}
+
+	n, err := be.Write(slice)
+	if n != len(slice) {
+		return fmt.Errorf("unexpected number of bytes written (want %d, have %d)", len(slice), n)
+	}
+
+	return err
+}
 
 // Some default encoder wrapper / convenience functions
 var (
@@ -25,6 +84,15 @@ var (
 	}
 	YAMLDecoder = func(r io.Reader) Decoder {
 		return yaml.NewDecoder(r)
+	}
+	BytesEncoder = func(w io.Writer) Encoder {
+		return &byteEncoder{Writer: w}
+	}
+	BytesDecoder = func(r io.Reader) Decoder {
+		return &byteDecoder{Reader: r}
+	}
+	BytesDecoderZeroCopy = func(r io.Reader) Decoder {
+		return &byteDecoder{Reader: r, zeroCopy: true}
 	}
 )
 

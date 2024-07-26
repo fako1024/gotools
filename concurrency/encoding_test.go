@@ -54,6 +54,22 @@ func TestSimpleEncode(t *testing.T) {
 	}
 }
 
+func TestSimpleByteEncode(t *testing.T) {
+	input := []byte("This is a test")
+
+	wc := NewWriterChain().PostFn(func(rw *ReadWriter) error {
+		var res []byte
+		rc := NewReaderChain(rw).PostFn(func(rw *ReadWriter) error {
+			return nil
+		}).Build()
+		require.Nil(t, rc.DecodeAndClose(BytesDecoder, &res))
+		require.EqualValues(t, input, res)
+
+		return nil
+	}).Build()
+	require.Nil(t, wc.EncodeAndClose(BytesEncoder, input))
+}
+
 func TestEncoderChain(t *testing.T) {
 	input := testStruct{Name: "foo", Value: 42}
 
@@ -90,6 +106,28 @@ func TestEncoderChain(t *testing.T) {
 				require.Nil(t, wc.EncodeAndClose(cs.encoder, input))
 			}
 		})
+	}
+}
+
+func TestEncoderChainBytes(t *testing.T) {
+	input := []byte("This is a test")
+
+	ref, err := gzipManual(input)
+	require.Nil(t, err)
+
+	// Repeat test a couple of times to trigger pool re-use scenario
+	for i := 0; i < 100; i++ {
+		wc := NewWriterChain().AddWriter(NewGZIPWriter()).PostFn(func(rw *ReadWriter) error {
+			var res []byte
+			require.Equal(t, ref, rw.BytesCopy())
+
+			dc := NewReaderChain(rw).AddReader(NewGZIPReader()).Build()
+			require.Nil(t, dc.DecodeAndClose(BytesDecoder, &res))
+
+			require.EqualValues(t, input, res)
+			return nil
+		}).Build()
+		require.Nil(t, wc.EncodeAndClose(BytesEncoder, input))
 	}
 }
 
