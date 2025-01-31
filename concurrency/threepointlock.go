@@ -21,9 +21,9 @@ var (
 	ErrUnlockConfirmTimeout = errors.New("timeout waiting for unlock confirmation")
 )
 
-// Semaphore is simply the underlying byte slice (from a memory pool), serving
-// as both shared buffer and Semaphore representing the held lock
-type Semaphore = []byte
+// SemaphoreBuffer is simply the underlying byte slice (from a memory pool), serving
+// as both shared buffer and SemaphoreBuffer representing the held lock
+type SemaphoreBuffer = []byte
 
 // ThreePointLock denotes a concurrency pattern that allows for rare locks on a high-
 // throughput main loop function with minimal performance impact on said routine
@@ -208,7 +208,7 @@ func (tpl *ThreePointLock) HasLockRequest() bool {
 }
 
 // ConsumeLockRequest consumes the lock request
-func (tpl *ThreePointLock) ConsumeLockRequest() Semaphore {
+func (tpl *ThreePointLock) ConsumeLockRequest() SemaphoreBuffer {
 	return <-tpl.request
 }
 
@@ -228,7 +228,7 @@ func (tpl *ThreePointLock) ConfirmLockRequest() {
 }
 
 // Release releases the semaphore back to the memory pool
-func (tpl *ThreePointLock) Release(sem Semaphore) {
+func (tpl *ThreePointLock) Release(sem SemaphoreBuffer) {
 	tpl.memPool.Put(sem)
 }
 
