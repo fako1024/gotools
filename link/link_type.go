@@ -2,6 +2,18 @@ package link
 
 import "fmt"
 
+const (
+
+	// IPLayerOffsetEthernet denotes the ethernet header offset
+	IPLayerOffsetEthernet = 14
+
+	// IPLayerOffsetLinuxSLL2 denotes the Linux SLL2 header offset
+	IPLayerOffsetLinuxSLL2 = 20
+
+	// LayerOffsetPPPOE denotes the additional offset for PPPOE (session) packets
+	LayerOffsetPPPOE = 8
+)
+
 // Type denotes the linux interface type
 type Type int
 

@@ -132,6 +132,21 @@ func (l *Link) getLinkType() (Type, error) {
 
 ////////////////////////////////////////////////////////////////////////////////
 
+func newLink(name string) (link *Link, err error) {
+	link = &Link{
+		Name: name,
+	}
+
+	if link.Index, link.IsVLAN, err = link.getIndexVLAN(); err != nil {
+		return nil, err
+	}
+	if link.Type, err = link.getLinkType(); err != nil {
+		return nil, err
+	}
+
+	return
+}
+
 func extractIndexVLAN(data []byte) (int, bool, error) {
 	var (
 		index  int64

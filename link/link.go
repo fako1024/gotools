@@ -1,20 +1,11 @@
+//go:build linux
+// +build linux
+
 package link
 
 import (
 	"errors"
 	"io/fs"
-)
-
-const (
-
-	// IPLayerOffsetEthernet denotes the ethernet header offset
-	IPLayerOffsetEthernet = 14
-
-	// IPLayerOffsetLinuxSLL2 denotes the Linux SLL2 header offset
-	IPLayerOffsetLinuxSLL2 = 20
-
-	// LayerOffsetPPPOE denotes the additional offset for PPPOE (session) packets
-	LayerOffsetPPPOE = 8
 )
 
 var (
@@ -78,20 +69,4 @@ func New(name string, opts ...func(*Link)) (link *Link, err error) {
 // String returns the name of the network interface (Stringer interface)
 func (l Link) String() string {
 	return l.Name
-}
-
-// NewInterface instantiates a new network interface and obtains its basic parameters
-func newLink(name string) (link *Link, err error) {
-	link = &Link{
-		Name: name,
-	}
-
-	if link.Index, link.IsVLAN, err = link.getIndexVLAN(); err != nil {
-		return nil, err
-	}
-	if link.Type, err = link.getLinkType(); err != nil {
-		return nil, err
-	}
-
-	return
 }
