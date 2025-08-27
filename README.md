@@ -18,6 +18,10 @@ This package contains the following Go modules:
 [![GoDoc](https://godoc.org/github.com/fako1024/gotools/cryptoutils?status.svg)](https://godoc.org/github.com/fako1024/gotools/cryptoutils/)
 [![Go Report Card](https://goreportcard.com/badge/github.com/fako1024/gotools/cryptoutils)](https://goreportcard.com/report/github.com/fako1024/gotools/cryptoutils)
 
+[link](./link) - Optimized network interface primitives / tooling\
+[![GoDoc](https://godoc.org/github.com/fako1024/gotools/link?status.svg)](https://godoc.org/github.com/fako1024/gotools/link/)
+[![Go Report Card](https://goreportcard.com/badge/github.com/fako1024/gotools/link)](https://goreportcard.com/report/github.com/fako1024/gotools/link)
+
 [shell](./shell) - Convenience wrapper to execute shell commands\
 [![GoDoc](https://godoc.org/github.com/fako1024/gotools/shell?status.svg)](https://godoc.org/github.com/fako1024/gotools/shell/)
 [![Go Report Card](https://goreportcard.com/badge/github.com/fako1024/gotools/shell)](https://goreportcard.com/report/github.com/fako1024/gotools/shell)
