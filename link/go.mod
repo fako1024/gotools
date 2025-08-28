@@ -1,4 +1,4 @@
-module link
+module github.com/fako1024/gotools/link
 
 go 1.25.0
 
