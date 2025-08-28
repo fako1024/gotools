@@ -33,7 +33,7 @@ func TestPrivatePublicKeyConsistency(t *testing.T) {
 func TestInvalid(t *testing.T) {
 	_, err := New(0)
 	if assert.Error(t, err) {
-		assert.Equal(t, errors.New("crypto/rsa: too few primes of given length to generate an RSA key"), err)
+		assert.Equal(t, errors.New("rsa: key too small"), err)
 	}
 	_, err = NewFromPEM(nil)
 	if assert.Error(t, err) {
