@@ -37,6 +37,7 @@ var (
 )
 
 // HostLinks returns all (or selected) host interfaces
+// The function will not fail if a link is down, but will fail if a link does not exist
 func HostLinks(names ...string) (Links, error) {
 	if len(names) == 0 {
 		linkDir, err := os.OpenFile(netBasePath, os.O_RDONLY, 0600)
@@ -144,7 +145,7 @@ func newLink(name string) (link *Link, err error) {
 		return nil, err
 	}
 
-	return
+	return link, nil
 }
 
 func extractIndexVLAN(data []byte) (int, bool, error) {

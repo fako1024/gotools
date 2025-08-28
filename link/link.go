@@ -31,31 +31,27 @@ type Link struct {
 }
 
 // New instantiates a new link / interface
+// It will return an error if the interface does not exist or is not up
 func New(name string, opts ...func(*Link)) (link *Link, err error) {
 
 	link, lerr := newLink(name)
 	if lerr != nil {
 		if errors.Is(lerr, fs.ErrNotExist) {
-			err = ErrNotExist
-		} else {
-			err = lerr
+			return nil, ErrNotExist
 		}
-		return
+		return nil, lerr
 	}
 
 	isUp, uerr := link.IsUp()
 	if uerr != nil {
 		if errors.Is(uerr, fs.ErrNotExist) {
-			err = ErrNotExist
-		} else {
-			err = uerr
+			return nil, ErrNotExist
 		}
-		return
+		return nil, uerr
 	}
 
 	if !isUp {
-		err = ErrNotUp
-		return
+		return nil, ErrNotUp
 	}
 
 	// Apply functional options, if any
