@@ -14,8 +14,18 @@ import (
 	"github.com/google/shlex"
 )
 
+// Options represents options for running shell commands
+type Options struct {
+	StdInData []byte
+}
+
 // Run executes the provided shell command and returns STDOUT / STDERR
 func Run(command string) (stdout string, err error) {
+	return RunWithOptions(command, nil)
+}
+
+// RunWithOptions executes the provided shell command and returns STDOUT / STDERR
+func RunWithOptions(command string, opts *Options) (stdout string, err error) {
 
 	if command == "" {
 		return
@@ -52,8 +62,20 @@ func Run(command string) (stdout string, err error) {
 		return "", fmt.Errorf("failed to parse command (%s): %w", command, err)
 	}
 
+	// Generate command
+	cmd := generateCommand(fields, outBuf)
+
+	// Handle options
+	if opts != nil {
+
+		// Attach STDIN data if provided
+		if opts.StdInData != nil {
+			cmd.Stdin = bytes.NewReader(opts.StdInData)
+		}
+	}
+
 	// Execute command
-	err = generateCommand(fields, outBuf).Run()
+	err = cmd.Run()
 
 	return outStringBuf.String(), err
 }
