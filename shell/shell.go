@@ -78,10 +78,9 @@ func RunWithOptions(command string, opts *Options) (stdout string, err error) {
 		// Create new session if requested
 		if opts.CreateSession {
 			if cmd.SysProcAttr == nil {
-				cmd.SysProcAttr = &syscall.SysProcAttr{
-					Setsid: true,
-				}
+				cmd.SysProcAttr = &syscall.SysProcAttr{}
 			}
+			cmd.SysProcAttr.Setsid = true
 		}
 	}
 
