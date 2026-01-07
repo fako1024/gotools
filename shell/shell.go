@@ -10,13 +10,15 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"syscall"
 
 	"github.com/google/shlex"
 )
 
 // Options represents options for running shell commands
 type Options struct {
-	StdInData []byte
+	StdInData     []byte
+	CreateSession bool
 }
 
 // Run executes the provided shell command and returns STDOUT / STDERR
@@ -71,6 +73,15 @@ func RunWithOptions(command string, opts *Options) (stdout string, err error) {
 		// Attach STDIN data if provided
 		if opts.StdInData != nil {
 			cmd.Stdin = bytes.NewReader(opts.StdInData)
+		}
+
+		// Create new session if requested
+		if opts.CreateSession {
+			if cmd.SysProcAttr == nil {
+				cmd.SysProcAttr = &syscall.SysProcAttr{
+					Setsid: true,
+				}
+			}
 		}
 	}
 
