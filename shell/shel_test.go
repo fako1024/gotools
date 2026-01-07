@@ -37,70 +37,108 @@ func TestPipes(t *testing.T) {
 }
 
 func TestCreateSession(t *testing.T) {
-	// Get the current process's session ID using ps
-	parentSidOut, err := Run("ps -o sid= -p " + strconv.Itoa(os.Getpid()))
+	// Use PGID (process group ID) which is available on Darwin and Linux
+	parentPid := os.Getpid()
+	parentPgidOut, err := Run("ps -o pgid= -p " + strconv.Itoa(parentPid))
 	if err != nil {
-		t.Fatalf("Failed to get parent session ID: %v", err)
+		t.Fatalf("Failed to get parent process group ID: %v", err)
+	}
+	parentPGID, err := strconv.Atoi(strings.TrimSpace(parentPgidOut))
+	if err != nil {
+		t.Fatalf("Failed to parse parent PGID from output %q: %v", parentPgidOut, err)
 	}
 
-	parentSid, err := strconv.Atoi(strings.TrimSpace(parentSidOut))
-	if err != nil {
-		t.Fatalf("Failed to parse parent session ID from output %q: %v", parentSidOut, err)
-	}
+	// Helper to get child PID and PGID in one go
+	childInfoCmd := "sh -c 'echo PID=$$; echo PGID=$(ps -o pgid= -p $$)'"
 
-	// Test with CreateSession: true - should create a new session
+	// Test with CreateSession: true - should create a new session/group
 	t.Run("WithCreateSession", func(t *testing.T) {
-		// Use sh -c to execute a command that prints its session ID
-		stdout, err := RunWithOptions("sh -c 'ps -o sid= -p $$'", &Options{
-			CreateSession: true,
-		})
+		stdout, err := RunWithOptions(childInfoCmd, &Options{CreateSession: true})
 		if err != nil {
 			t.Fatalf("RunWithOptions with CreateSession failed: %v", err)
 		}
-
-		childSid, err := strconv.Atoi(strings.TrimSpace(stdout))
-		if err != nil {
-			t.Fatalf("Failed to parse child session ID from output %q: %v", stdout, err)
+		var childPID, childPGID int
+		for _, ln := range strings.Split(strings.TrimSpace(stdout), "\n") {
+			ln = strings.TrimSpace(ln)
+			if strings.HasPrefix(ln, "PID=") {
+				childPID, err = strconv.Atoi(strings.TrimSpace(strings.TrimPrefix(ln, "PID=")))
+				if err != nil {
+					t.Fatalf("Failed to parse child PID from line %q: %v", ln, err)
+				}
+			} else if strings.HasPrefix(ln, "PGID=") {
+				childPGID, err = strconv.Atoi(strings.TrimSpace(strings.TrimPrefix(ln, "PGID=")))
+				if err != nil {
+					t.Fatalf("Failed to parse child PGID from line %q: %v", ln, err)
+				}
+			}
 		}
-
-		if childSid == parentSid {
-			t.Errorf("Expected new session ID, but got same as parent: parent=%d, child=%d", parentSid, childSid)
+		if childPID == 0 || childPGID == 0 {
+			t.Fatalf("Failed to obtain child PID/PGID from output: %q", stdout)
+		}
+		// After setsid, the process becomes session and process group leader: PGID == PID
+		if childPGID != childPID {
+			t.Errorf("Expected child PGID==PID in new session, got PGID=%d PID=%d", childPGID, childPID)
+		}
+		if childPGID == parentPGID {
+			t.Errorf("Expected child PGID to differ from parent PGID in new session: parentPGID=%d childPGID=%d", parentPGID, childPGID)
 		}
 	})
 
-	// Test without CreateSession - should use the same session
+	// Test without CreateSession - should keep the same group/session as parent (PGID equal to parentPGID)
 	t.Run("WithoutCreateSession", func(t *testing.T) {
-		stdout, err := RunWithOptions("sh -c 'ps -o sid= -p $$'", nil)
+		stdout, err := RunWithOptions(childInfoCmd, nil)
 		if err != nil {
 			t.Fatalf("RunWithOptions without CreateSession failed: %v", err)
 		}
-
-		childSid, err := strconv.Atoi(strings.TrimSpace(stdout))
-		if err != nil {
-			t.Fatalf("Failed to parse child session ID from output %q: %v", stdout, err)
+		var childPID, childPGID int
+		for _, ln := range strings.Split(strings.TrimSpace(stdout), "\n") {
+			ln = strings.TrimSpace(ln)
+			if strings.HasPrefix(ln, "PID=") {
+				childPID, err = strconv.Atoi(strings.TrimSpace(strings.TrimPrefix(ln, "PID=")))
+				if err != nil {
+					t.Fatalf("Failed to parse child PID from line %q: %v", ln, err)
+				}
+			} else if strings.HasPrefix(ln, "PGID=") {
+				childPGID, err = strconv.Atoi(strings.TrimSpace(strings.TrimPrefix(ln, "PGID=")))
+				if err != nil {
+					t.Fatalf("Failed to parse child PGID from line %q: %v", ln, err)
+				}
+			}
 		}
-
-		if childSid != parentSid {
-			t.Errorf("Expected same session ID as parent, but got different: parent=%d, child=%d", parentSid, childSid)
+		if childPID == 0 || childPGID == 0 {
+			t.Fatalf("Failed to obtain child PID/PGID from output: %q", stdout)
+		}
+		if childPGID != parentPGID {
+			t.Errorf("Expected child PGID to equal parent PGID without CreateSession: parentPGID=%d childPGID=%d", parentPGID, childPGID)
 		}
 	})
 
-	// Test with CreateSession: false explicitly - should use the same session
+	// Test with CreateSession: false explicitly - equivalent to default
 	t.Run("WithCreateSessionFalse", func(t *testing.T) {
-		stdout, err := RunWithOptions("sh -c 'ps -o sid= -p $$'", &Options{
-			CreateSession: false,
-		})
+		stdout, err := RunWithOptions(childInfoCmd, &Options{CreateSession: false})
 		if err != nil {
 			t.Fatalf("RunWithOptions with CreateSession=false failed: %v", err)
 		}
-
-		childSid, err := strconv.Atoi(strings.TrimSpace(stdout))
-		if err != nil {
-			t.Fatalf("Failed to parse child session ID from output %q: %v", stdout, err)
+		var childPID, childPGID int
+		for _, ln := range strings.Split(strings.TrimSpace(stdout), "\n") {
+			ln = strings.TrimSpace(ln)
+			if strings.HasPrefix(ln, "PID=") {
+				childPID, err = strconv.Atoi(strings.TrimSpace(strings.TrimPrefix(ln, "PID=")))
+				if err != nil {
+					t.Fatalf("Failed to parse child PID from line %q: %v", ln, err)
+				}
+			} else if strings.HasPrefix(ln, "PGID=") {
+				childPGID, err = strconv.Atoi(strings.TrimSpace(strings.TrimPrefix(ln, "PGID=")))
+				if err != nil {
+					t.Fatalf("Failed to parse child PGID from line %q: %v", ln, err)
+				}
+			}
 		}
-
-		if childSid != parentSid {
-			t.Errorf("Expected same session ID as parent, but got different: parent=%d, child=%d", parentSid, childSid)
+		if childPID == 0 || childPGID == 0 {
+			t.Fatalf("Failed to obtain child PID/PGID from output: %q", stdout)
+		}
+		if childPGID != parentPGID {
+			t.Errorf("Expected child PGID to equal parent PGID with CreateSession=false: parentPGID=%d childPGID=%d", parentPGID, childPGID)
 		}
 	})
 }
