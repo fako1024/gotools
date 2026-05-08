@@ -50,9 +50,17 @@ func HostLinks(names ...string) (Links, error) {
 			}
 		}()
 
-		names, err = linkDir.Readdirnames(-1)
+		direEnts, err := linkDir.Readdir(-1)
 		if err != nil {
 			return nil, err
+		}
+		names = make([]string, 0, len(direEnts))
+		for _, ent := range direEnts {
+
+			// Regular files are not interfaces, so we skip them. This is a sanity check to avoid trying to parse non-interface entries in the directory.
+			if !ent.Mode().IsRegular() {
+				names = append(names, ent.Name())
+			}
 		}
 	}
 
