@@ -40,39 +40,26 @@ var (
 // The function will not fail if a link is down, but will fail if a link does not exist
 func HostLinks(names ...string) (Links, error) {
 	if len(names) == 0 {
-		linkDir, err := os.OpenFile(netBasePath, os.O_RDONLY, 0600)
+		var err error
+		names, err = hostLinkNamesFromSysfs()
 		if err != nil {
+			if isSysfsUnavailableErr(err) {
+				return hostLinksFromNetlink()
+			}
 			return nil, err
 		}
-		defer func() {
-			if cerr := linkDir.Close(); cerr != nil && err == nil {
-				err = cerr
-			}
-		}()
 
-		direEnts, err := linkDir.Readdir(-1)
-		if err != nil {
-			return nil, err
-		}
-		names = make([]string, 0, len(direEnts))
-		for _, ent := range direEnts {
-
-			// Regular files are not interfaces, so we skip them. This is a sanity check to avoid trying to parse non-interface entries in the directory.
-			if !ent.Mode().IsRegular() {
-				names = append(names, ent.Name())
-			}
-		}
+		return hostLinksByNames(names)
 	}
 
-	ifaces := make([]*Link, len(names))
-	var err error
-	for i, name := range names {
-		if ifaces[i], err = newLink(name); err != nil {
-			return nil, err
+	if err := ensureSysfsNetBaseReadable(); err != nil {
+		if isSysfsUnavailableErr(err) {
+			return hostLinksFromNetlink(names...)
 		}
+		return nil, err
 	}
 
-	return ifaces, nil
+	return hostLinksByNames(names)
 }
 
 // IsUp determines if an interface is currently up (at the time of the call)
@@ -237,4 +224,214 @@ func newAddr(ifam *syscall.IfAddrmsg, attrs []syscall.NetlinkRouteAttr) net.IP {
 		}
 	}
 	return nil
+}
+
+func hostLinkNamesFromSysfs() (names []string, err error) {
+	linkDir, err := os.Open(netBasePath)
+	if err != nil {
+		return nil, err
+	}
+	defer func() {
+		if cerr := linkDir.Close(); cerr != nil && err == nil {
+			err = cerr
+		}
+	}()
+
+	dirEnts, err := linkDir.ReadDir(-1)
+	if err != nil {
+		return nil, err
+	}
+
+	names = make([]string, 0, len(dirEnts))
+	for _, ent := range dirEnts {
+		mode := ent.Type()
+		if mode&os.ModeSymlink != 0 {
+			names = append(names, ent.Name())
+			continue
+		}
+
+		if mode == 0 {
+			info, ierr := os.Lstat(netBasePath + ent.Name())
+			if ierr != nil {
+				return nil, ierr
+			}
+
+			if info.Mode()&os.ModeSymlink != 0 {
+				names = append(names, ent.Name())
+			}
+		}
+	}
+
+	return names, nil
+}
+
+func ensureSysfsNetBaseReadable() error {
+	linkDir, err := os.Open(netBasePath)
+	if err != nil {
+		return err
+	}
+	return linkDir.Close()
+}
+
+func hostLinksByNames(names []string) (Links, error) {
+	ifaces := make([]*Link, len(names))
+	for i, name := range names {
+		link, err := newLink(name)
+		if err != nil {
+			return nil, err
+		}
+		ifaces[i] = link
+	}
+
+	return ifaces, nil
+}
+
+func hostLinksFromNetlink(names ...string) (Links, error) {
+	links, err := parseNetlinkLinks()
+	if err != nil {
+		return nil, err
+	}
+
+	if len(names) == 0 {
+		return links, nil
+	}
+
+	return selectLinksByName(links, names)
+}
+
+func parseNetlinkLinks() (Links, error) {
+	tab, err := syscall.NetlinkRIB(syscall.RTM_GETLINK, syscall.AF_UNSPEC)
+	if err != nil {
+		return nil, os.NewSyscallError("netlinkrib", err)
+	}
+
+	msgs, err := syscall.ParseNetlinkMessage(tab)
+	if err != nil {
+		return nil, os.NewSyscallError("parsenetlinkmessage", err)
+	}
+
+	links := make(Links, 0, len(msgs))
+loop:
+	for _, m := range msgs {
+		switch m.Header.Type {
+		case syscall.NLMSG_DONE:
+			break loop
+		case syscall.RTM_NEWLINK:
+			if len(m.Data) < syscall.SizeofIfInfomsg {
+				continue
+			}
+
+			ifim := (*syscall.IfInfomsg)(unsafe.Pointer(&m.Data[0])) // #nosec G103
+			attrs, err := syscall.ParseNetlinkRouteAttr(&m)
+			if err != nil {
+				return nil, os.NewSyscallError("parsenetlinkrouteattr", err)
+			}
+
+			link := &Link{
+				Index: int(ifim.Index),
+				Type:  Type(ifim.Type),
+			}
+
+			for _, attr := range attrs {
+				switch routeAttrType(attr.Attr.Type) {
+				case syscall.IFLA_IFNAME:
+					link.Name = strings.TrimRight(string(attr.Value), "\x00")
+				case syscall.IFLA_LINKINFO:
+					link.IsVLAN = parseLinkInfoIsVLAN(attr.Value)
+				}
+			}
+
+			if link.Name != "" {
+				links = append(links, link)
+			}
+		}
+	}
+
+	return links, nil
+}
+
+func selectLinksByName(links Links, names []string) (Links, error) {
+	linksByName := make(map[string]*Link, len(links))
+	for _, link := range links {
+		if link == nil || link.Name == "" {
+			continue
+		}
+		if _, ok := linksByName[link.Name]; !ok {
+			linksByName[link.Name] = link
+		}
+	}
+
+	selectedLinks := make(Links, len(names))
+	for i, name := range names {
+		link, ok := linksByName[name]
+		if !ok {
+			return nil, &os.PathError{
+				Op:   "open",
+				Path: netBasePath + name + netUEventPath,
+				Err:  os.ErrNotExist,
+			}
+		}
+
+		linkCpy := *link
+		selectedLinks[i] = &linkCpy
+	}
+
+	return selectedLinks, nil
+}
+
+func routeAttrType(attrType uint16) uint16 {
+	return attrType & ^uint16(unix.NLA_F_NESTED|unix.NLA_F_NET_BYTEORDER)
+}
+
+func parseRouteAttrs(data []byte) ([]syscall.NetlinkRouteAttr, error) {
+	attrs := make([]syscall.NetlinkRouteAttr, 0, 4)
+	for len(data) >= syscall.SizeofRtAttr {
+		attr := (*syscall.RtAttr)(unsafe.Pointer(&data[0])) // #nosec G103
+		if int(attr.Len) < syscall.SizeofRtAttr || int(attr.Len) > len(data) {
+			return nil, syscall.EINVAL
+		}
+
+		attrs = append(attrs, syscall.NetlinkRouteAttr{
+			Attr:  *attr,
+			Value: data[syscall.SizeofRtAttr:int(attr.Len)],
+		})
+
+		next := (int(attr.Len) + syscall.RTA_ALIGNTO - 1) & ^(syscall.RTA_ALIGNTO - 1)
+		if next > len(data) {
+			return nil, syscall.EINVAL
+		}
+		data = data[next:]
+	}
+
+	return attrs, nil
+}
+
+func parseLinkInfoIsVLAN(data []byte) bool {
+	attrs, err := parseRouteAttrs(data)
+	if err != nil {
+		return false
+	}
+
+	for _, attr := range attrs {
+		if routeAttrType(attr.Attr.Type) != unix.IFLA_INFO_KIND {
+			continue
+		}
+
+		if strings.EqualFold(strings.TrimRight(string(attr.Value), "\x00"), netUEventDevTypeVLAN) {
+			return true
+		}
+	}
+
+	return false
+}
+
+func isSysfsUnavailableErr(err error) bool {
+	if err == nil {
+		return false
+	}
+
+	return errors.Is(err, os.ErrNotExist) ||
+		errors.Is(err, syscall.ENOTDIR) ||
+		errors.Is(err, syscall.EACCES) ||
+		errors.Is(err, syscall.EPERM)
 }

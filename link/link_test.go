@@ -7,10 +7,14 @@ import (
 	"errors"
 	"io/fs"
 	"net"
+	"os"
+	"syscall"
 	"testing"
+	"unsafe"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"golang.org/x/sys/unix"
 )
 
 func TestIsUp(t *testing.T) {
@@ -346,6 +350,143 @@ func BenchmarkGetIPs(b *testing.B) {
 			_, _ = iface.Addrs()
 		}
 	})
+}
+
+func TestIsSysfsUnavailableErr(t *testing.T) {
+	tests := []struct {
+		name string
+		err  error
+		want bool
+	}{
+		{
+			name: "nil",
+			err:  nil,
+			want: false,
+		},
+		{
+			name: "not-exist",
+			err:  os.ErrNotExist,
+			want: true,
+		},
+		{
+			name: "path-error-not-exist",
+			err: &os.PathError{
+				Op:   "open",
+				Path: netBasePath,
+				Err:  os.ErrNotExist,
+			},
+			want: true,
+		},
+		{
+			name: "enotdir",
+			err:  syscall.ENOTDIR,
+			want: true,
+		},
+		{
+			name: "eacces",
+			err:  syscall.EACCES,
+			want: true,
+		},
+		{
+			name: "eperm",
+			err:  syscall.EPERM,
+			want: true,
+		},
+		{
+			name: "einval",
+			err:  syscall.EINVAL,
+			want: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			require.Equal(t, tt.want, isSysfsUnavailableErr(tt.err))
+		})
+	}
+}
+
+func TestParseLinkInfoIsVLAN(t *testing.T) {
+	tests := []struct {
+		name string
+		data []byte
+		want bool
+	}{
+		{
+			name: "empty",
+			data: nil,
+			want: false,
+		},
+		{
+			name: "malformed",
+			data: []byte{0x01, 0x02},
+			want: false,
+		},
+		{
+			name: "kind-vlan",
+			data: encodeRtAttr(unix.IFLA_INFO_KIND, []byte("vlan\x00")),
+			want: true,
+		},
+		{
+			name: "kind-bridge",
+			data: encodeRtAttr(unix.IFLA_INFO_KIND, []byte("bridge\x00")),
+			want: false,
+		},
+		{
+			name: "kind-vlan-nested-flag",
+			data: encodeRtAttr(unix.IFLA_INFO_KIND|unix.NLA_F_NESTED, []byte("vlan\x00")),
+			want: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			require.Equal(t, tt.want, parseLinkInfoIsVLAN(tt.data))
+		})
+	}
+}
+
+func TestSelectLinksByName(t *testing.T) {
+	t.Run("order-and-duplicates", func(t *testing.T) {
+		links := Links{
+			{Name: "eth0", Index: 2, Type: TypeEthernet},
+			{Name: "lo", Index: 1, Type: TypeLoopback},
+		}
+
+		got, err := selectLinksByName(links, []string{"lo", "eth0", "lo"})
+		require.NoError(t, err)
+		require.Len(t, got, 3)
+		require.Equal(t, "lo", got[0].Name)
+		require.Equal(t, "eth0", got[1].Name)
+		require.Equal(t, "lo", got[2].Name)
+		require.NotSame(t, got[0], got[2])
+	})
+
+	t.Run("missing-link", func(t *testing.T) {
+		links := Links{{Name: "eth0", Index: 2, Type: TypeEthernet}}
+
+		_, err := selectLinksByName(links, []string{"doesnotexist"})
+		require.Error(t, err)
+		require.ErrorIs(t, err, os.ErrNotExist)
+
+		var perr *os.PathError
+		require.ErrorAs(t, err, &perr)
+		require.Equal(t, netBasePath+"doesnotexist"+netUEventPath, perr.Path)
+	})
+}
+
+func encodeRtAttr(attrType uint16, value []byte) []byte {
+	rawLen := syscall.SizeofRtAttr + len(value)
+	alignedLen := (rawLen + syscall.RTA_ALIGNTO - 1) & ^(syscall.RTA_ALIGNTO - 1)
+
+	b := make([]byte, alignedLen)
+	*(*syscall.RtAttr)(unsafe.Pointer(&b[0])) = syscall.RtAttr{ // #nosec G103
+		Len:  uint16(rawLen),
+		Type: attrType,
+	}
+	copy(b[syscall.SizeofRtAttr:], value)
+
+	return b
 }
 
 type mockInterfaces struct {
