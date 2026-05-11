@@ -66,8 +66,8 @@ func TestPEMConversion(t *testing.T) {
 
 	r2, err := NewFromPEM(privKeyPEM)
 	assert.Nil(t, err)
-	assert.Equal(t, r1, r2, "initial and re-read instances should be equal on reference-level")
-	assert.Equal(t, *r1, *r2, "initial and re-read instances should be equal on value-level")
+	assert.True(t, r1.PrivKey().Equal(r2.PrivKey()), "initial and re-read private keys should be semantically equal")
+	assert.Equal(t, privKeyPEM.Bytes, r2.PrivKeyPEM().Bytes, "initial and re-read private key PEM bytes should be equal")
 
 	pubKeyPEM2 := r2.PubKeyPEM()
 	assert.Equal(t, pubKeyPEM1, pubKeyPEM2, "initial and re-read public keys should be equal")
@@ -81,8 +81,8 @@ func TestStringConversion(t *testing.T) {
 
 	r2, err := NewFromString(privKeyString)
 	assert.Nil(t, err)
-	assert.Equal(t, r1, r2, "initial and re-read instances should be equal on reference-level")
-	assert.Equal(t, *r1, *r2, "initial and re-read instances should be equal on value-level")
+	assert.True(t, r1.PrivKey().Equal(r2.PrivKey()), "initial and re-read private keys should be semantically equal")
+	assert.Equal(t, privKeyString, r2.PrivKeyString(), "initial and re-read private key strings should be equal")
 }
 
 func TestEncryption(t *testing.T) {
